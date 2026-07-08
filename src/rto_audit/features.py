@@ -8,7 +8,7 @@ def add_features(df: pl.DataFrame) -> pl.DataFrame:
     df = add_distance_column(df)
     df = df.sort(["courier_id", "timestamp"])
     df = df.with_columns(
-        pl.col("timestamp").diff().over("courier_id").dt.total_seconds().alias("dwell_seconds")
+        pl.col("timestamp").diff().over("courier_id").dt.total_seconds().cast(pl.Float64).alias("dwell_seconds")
     )
 
     is_failed = pl.col("reported_status").is_in(list(FAILED_STATUSES))
