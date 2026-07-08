@@ -38,8 +38,9 @@ scripts/
 └── generate_data.py  # CLI: python scripts/generate_data.py --couriers 50 --events 20000 --seed 42
 
 tests/                 # pytest suite (config, geo, features, profiling, clustering, pipeline)
-Dockerfile
-docker-compose.yml
+Dockerfile             # multi-stage: builder (deps + package) -> slim non-root runtime
+docker-compose.yml     # local orchestration: env config, volume, healthcheck, restart policy
+.dockerignore
 ```
 
 Each module in `rto_audit/` has one responsibility and no Streamlit imports,
@@ -102,14 +103,106 @@ The Streamlit app itself calls `run_pipeline(regenerate=True, ...)` on
 startup, so it always demos against a freshly generated, reproducible
 dataset (seeded) even if you skip the manual generation step.
 
-## Running via Docker
+## DevOps
+
+The application layer is the analytics pipeline above; this section is
+about how it's packaged, run, and (eventually) deployed and automated.
+
+### Containerization
+
+The `Dockerfile` is a two-stage build, not a single `FROM` with everything
+bolted on:
+
+- **`builder`** — installs dependencies from `requirements.txt` into an
+  isolated `--prefix=/install`, then builds and installs the `rto_audit`
+  package itself (non-editable, `--no-deps`, using the `src`-layout
+  discovery already configured in `pyproject.toml`). The dependency-install
+  layer is copied/cached separately from the source-install layer, so
+  editing application code doesn't force a full dependency re-resolve on
+  rebuild.
+- **`runtime`** — starts from a fresh `python:3.11-slim`, copies only the
+  installed `/install` prefix and the `app/`/`scripts/` directories (no
+  `src/`, no pip, no compiler toolchain, no dev dependencies). Runs as a
+  non-root `appuser` (UID 1000), not root.
+
+Other choices worth calling out in an interview:
+
+- **No `pytest` in the runtime image.** `requirements.txt` (what the
+  Dockerfile installs) intentionally excludes it; `pytest` only comes in
+  locally via `pyproject.toml`'s `dev` extra (`pip install -e ".[dev]"`).
+  Dev tooling doesn't belong in a production image.
+- **`HEALTHCHECK` without adding curl/wget.** The slim base image has no
+  HTTP client installed, and adding one just for a healthcheck grows the
+  image and the attack surface for no real benefit — the Python
+  interpreter that's already there can hit Streamlit's own
+  `/_stcore/health` endpoint just as well (`Dockerfile`'s `HEALTHCHECK`
+  instruction).
+- **`.dockerignore`** keeps `venv/`, `.git/`, `tests/`, `docs/`, and
+  generated CSVs out of the build context, so `docker build` isn't
+  needlessly slow or leaking unrelated files into layer cache invalidation.
+
+### Local orchestration (Docker Compose)
 
 ```bash
 docker compose up --build
 ```
 
-Serves the dashboard at `http://localhost:8501`. `data/` is mounted as a
-volume so regenerating data doesn't require a rebuild.
+Serves the dashboard at `http://localhost:8501`. What `docker-compose.yml`
+actually configures, beyond the minimum to make it start:
+
+- **Ports** — the host port is overridable via `RTO_AUDIT_PORT` (env var or
+  `.env` file), defaulting to `8501`; the container always listens on
+  `8501` internally, so the two are never accidentally out of sync.
+- **Environment** — Streamlit's runtime behavior (`STREAMLIT_SERVER_ADDRESS`,
+  `STREAMLIT_SERVER_PORT`, `STREAMLIT_SERVER_HEADLESS`,
+  `STREAMLIT_BROWSER_GATHER_USAGE_STATS`) is driven entirely by environment
+  variables rather than baked-in CLI flags, so the same image behaves
+  correctly under `docker run`, Compose, or (eventually) Kubernetes without
+  a rebuild.
+- **Volumes** — `./data:/app/data` persists the generated CSVs across
+  container restarts and rebuilds instead of regenerating ~20,000 synthetic
+  events every time the container starts.
+- **Healthcheck** — `docker compose ps` reports `healthy`/`unhealthy` based
+  on the same `/_stcore/health` probe as the image's own `HEALTHCHECK`,
+  with a 40s `start_period` so the pipeline has time to run once before
+  failed probes count against the retry budget.
+- **Restart policy** — `unless-stopped`, so a crashed container comes back
+  without manual intervention, but an intentional `docker compose stop`
+  stays stopped.
+
+### Roadmap: Kubernetes (not yet added)
+
+The image is already built to be orchestrator-agnostic (env-driven config,
+a real container healthcheck, no reliance on Compose-specific features),
+which is what makes this the natural next step rather than a rewrite.
+Planned:
+
+- `Deployment` + `Service` (`ClusterIP` + an `Ingress` or `LoadBalancer` for
+  external access) in place of the single Compose service.
+- `ConfigMap` for the non-secret `STREAMLIT_*` environment variables
+  already defined in `docker-compose.yml`.
+- Liveness and readiness probes against `/_stcore/health` — the same
+  endpoint the Docker `HEALTHCHECK` already uses, just expressed as k8s
+  probes instead of a Docker-level check.
+- A `PersistentVolumeClaim` for `/app/data`, replacing the local bind
+  mount.
+- Resource `requests`/`limits` on the container, since none are set today
+  (Compose's `deploy.resources` key is Swarm/Compose-only and isn't in
+  `docker-compose.yml` yet either).
+
+### Roadmap: CI/CD (GitHub Actions, not yet added)
+
+No workflow exists in `.github/workflows/` yet. Planned pipeline:
+
+- On every PR: `pytest`, plus a `docker build` (using the `builder` and
+  `runtime` targets) to catch Dockerfile regressions before merge.
+- On merge to `main`: build and push the `runtime` image to a container
+  registry (GHCR), tagged with the commit SHA, so any Kubernetes rollout
+  above has something concrete to deploy.
+- Dependency drift: a scheduled job re-resolving `requirements.txt` against
+  the pinned upper bounds already in place, to catch breaking upstream
+  releases (e.g. Plotly/Streamlit deprecations already noted in this repo)
+  before they reach a running deployment.
 
 ## Running tests
 
