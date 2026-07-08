@@ -2,6 +2,7 @@ import plotly.express as px
 import polars as pl
 import streamlit as st
 
+from rto_audit.clustering import LABEL_HIGH_RISK
 from rto_audit.config import COST_PER_RTO_RANGE_INR, DEFAULT_COST_PER_RTO_INR
 from rto_audit.pipeline import run_pipeline
 
@@ -29,11 +30,14 @@ with tab_leakage:
         max_value=COST_PER_RTO_RANGE_INR[1],
         value=DEFAULT_COST_PER_RTO_INR,
     )
-    total_anomalies = int(result.events_df["distance_anomaly"].sum())
+    high_risk_anomalies = result.events_df.filter(pl.col("distance_anomaly") == 1).join(
+        result.clustered_df.select(["courier_id", "cluster_label"]), on="courier_id"
+    ).filter(pl.col("cluster_label") == LABEL_HIGH_RISK)
+    total_anomalies = high_risk_anomalies.height
     total_leakage = total_anomalies * cost_per_rto
 
     col1, col2 = st.columns(2)
-    col1.metric("Total Flagged Anomaly Events", total_anomalies)
+    col1.metric("Total Flagged Anomaly Events (High-Risk Cluster)", total_anomalies)
     col2.metric("Estimated Leakage (INR)", f"₹{total_leakage:,.0f}")
 
     by_cluster = (
