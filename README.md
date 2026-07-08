@@ -17,8 +17,7 @@ worth auditing, and the underlying geospatial evidence for each flag.
 It is built as a portfolio/interview showcase — optimized for clean
 architecture and a defensible Polars performance story on a synthetic
 dataset with planted ground truth, not for production ingestion of real
-operational data. See `docs/superpowers/specs/2026-07-08-rto-fraud-analytics-design.md`
-for the full design doc.
+operational data.
 
 ## Architecture
 
