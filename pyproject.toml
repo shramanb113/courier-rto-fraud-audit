@@ -1,0 +1,25 @@
+[project]
+name = "rto-audit"
+version = "0.1.0"
+description = "Courier Telemetry Audit & RTO Fraud Analytics Engine"
+requires-python = ">=3.11"
+dependencies = [
+    "polars>=1.0",
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+    "streamlit>=1.35",
+    "plotly>=5.20",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
