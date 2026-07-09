@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rto-audit-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=rto_audit
+      - POSTGRES_PASSWORD=rto_audit
+      - POSTGRES_DB=rto_audit
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rto_audit -d rto_audit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   rto-audit:
     build:
       context: .
@@ -6,6 +23,9 @@ services:
     image: rto-audit:latest
     container_name: rto-audit
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${RTO_AUDIT_PORT:-8501}:8501"
     environment:
@@ -14,6 +34,7 @@ services:
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_HEADLESS=true
       - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - DATABASE_URL=postgresql+psycopg2://rto_audit:rto_audit@postgres:5432/rto_audit
     volumes:
       - ./data:/app/data
     healthcheck:
@@ -28,3 +49,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 40s
+
+volumes:
+  postgres-data:
