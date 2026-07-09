@@ -28,7 +28,7 @@ jobs:
       - name: Build runtime image
         run: docker build --target runtime -t rto-audit:ci .
       - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: rto-audit:ci
           severity: "CRITICAL,HIGH"
