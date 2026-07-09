@@ -30,16 +30,16 @@ def _make_result(courier_prefix: str = "c") -> PipelineResult:
     )
     events_df = pl.DataFrame(
         {
-            "event_id": ["e1"],
-            "courier_id": [f"{courier_prefix}1"],
-            "timestamp": [datetime(2026, 6, 1, 9, 0, 0)],
-            "reported_status": ["Customer_Unavailable"],
-            "courier_latitude": [19.0],
-            "courier_longitude": [72.9],
-            "customer_latitude": [19.01],
-            "customer_longitude": [72.91],
-            "distance_m": [650.0],
-            "distance_anomaly": [1],
+            "event_id": ["e1", "e2"],
+            "courier_id": [f"{courier_prefix}1", f"{courier_prefix}1"],
+            "timestamp": [datetime(2026, 6, 1, 9, 0, 0), datetime(2026, 6, 1, 9, 5, 0)],
+            "reported_status": ["Customer_Unavailable", "Delivered"],
+            "courier_latitude": [19.0, 19.0],
+            "courier_longitude": [72.9, 72.9],
+            "customer_latitude": [19.01, 19.0],
+            "customer_longitude": [72.91, 72.9],
+            "distance_m": [650.0, 20.0],
+            "distance_anomaly": [1, 0],
         }
     )
     agreement_df = pl.DataFrame(
@@ -74,8 +74,9 @@ def test_save_and_load_latest_run_round_trips_profiles_events_and_agreement(engi
     loaded = load_latest_run(engine)
     assert loaded is not None
     assert sorted(loaded.clustered_df["courier_id"].to_list()) == ["c1", "c2"]
-    assert loaded.events_df.height == 1
-    assert loaded.events_df["event_id"][0] == "e1"
+    assert loaded.events_df.height == 2
+    assert sorted(loaded.events_df["event_id"].to_list()) == ["e1", "e2"]
+    assert loaded.events_df.filter(pl.col("distance_anomaly") == 1).height == 1
     assert loaded.agreement_df is not None
     assert loaded.agreement_df["count"][0] == 1
 

@@ -45,8 +45,8 @@ courier_profiles = Table(
     Column("cluster_label", String, nullable=False),
 )
 
-flagged_events = Table(
-    "flagged_events",
+events = Table(
+    "events",
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("run_id", Integer, nullable=False),
@@ -141,8 +141,6 @@ def has_any_run(engine: Engine) -> bool:
 
 
 def save_run(engine: Engine, result: PipelineResult) -> int:
-    flagged_df = result.events_df.filter(pl.col("distance_anomaly") == 1)
-
     with engine.begin() as conn:
         run_id = conn.execute(
             insert(pipeline_runs).values(
@@ -158,11 +156,11 @@ def save_run(engine: Engine, result: PipelineResult) -> int:
         if profile_rows:
             conn.execute(insert(courier_profiles), profile_rows)
 
-        event_rows = flagged_df.select(EVENT_COLUMNS).to_dicts()
+        event_rows = result.events_df.select(EVENT_COLUMNS).to_dicts()
         for row in event_rows:
             row["run_id"] = run_id
         if event_rows:
-            conn.execute(insert(flagged_events), event_rows)
+            conn.execute(insert(events), event_rows)
 
         if result.agreement_df is not None:
             agreement_rows = result.agreement_df.select(AGREEMENT_COLUMNS).to_dicts()
@@ -195,8 +193,8 @@ def load_latest_run(engine: Engine) -> PipelineResult | None:
             )
         ).mappings().all()
         event_rows = conn.execute(
-            select(*[flagged_events.c[name] for name in EVENT_COLUMNS]).where(
-                flagged_events.c.run_id == latest_run_id
+            select(*[events.c[name] for name in EVENT_COLUMNS]).where(
+                events.c.run_id == latest_run_id
             )
         ).mappings().all()
         agreement_rows = conn.execute(
