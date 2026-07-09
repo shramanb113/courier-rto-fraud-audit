@@ -3,18 +3,26 @@ import polars as pl
 import streamlit as st
 
 from rto_audit.clustering import LABEL_HIGH_RISK
-from rto_audit.config import COST_PER_RTO_RANGE_INR, DEFAULT_COST_PER_RTO_INR
-from rto_audit.pipeline import run_pipeline
+from rto_audit.config import COST_PER_RTO_RANGE_INR, DATABASE_URL, DEFAULT_COST_PER_RTO_INR
+from rto_audit.ingest import run_and_store
+from rto_audit.store import get_engine, has_any_run, init_schema, load_latest_run
 
 st.set_page_config(page_title="Courier Telemetry Audit", layout="wide")
 
 
-@st.cache_data
-def load_pipeline_result(seed: int):
-    return run_pipeline(regenerate=True, n_couriers=50, n_events=20_000, seed=seed)
+@st.cache_resource
+def get_db_engine():
+    engine = get_engine(DATABASE_URL)
+    init_schema(engine)
+    return engine
 
 
-result = load_pipeline_result(seed=42)
+engine = get_db_engine()
+
+if not has_any_run(engine):
+    run_and_store(engine, regenerate=True, n_couriers=50, n_events=20_000, seed=42)
+
+result = load_latest_run(engine)
 
 st.title("Courier Telemetry Audit & RTO Fraud Analytics")
 
