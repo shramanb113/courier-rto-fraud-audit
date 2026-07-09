@@ -29,7 +29,9 @@ src/rto_audit/
 ├── features.py     # per-event anomaly flags, dwell-time proxy
 ├── profiling.py    # per-courier aggregation (RTO rate, anomaly count, avg deviation, variance)
 ├── clustering.py   # StandardScaler + KMeans(k=3) + centroid-to-label mapping
-└── pipeline.py      # orchestrates: generate/load -> features -> profile -> cluster
+├── pipeline.py      # orchestrates: generate/load -> features -> profile -> cluster
+├── store.py          # SQLAlchemy Core schema + save/load of pipeline runs (SQLite or Postgres)
+└── ingest.py         # composes run_pipeline() + store.save_run() into one persisted run
 
 app/
 └── streamlit_app.py  # thin UI: imports rto_audit, renders 3 tabs
@@ -75,6 +77,20 @@ result."
    leakage (₹), a leaderboard of the couriers most worth auditing, and a
    geospatial cluster scatter plus a map of the actual flagged GPS pings.
 
+### Results store
+
+`app/streamlit_app.py` no longer recomputes the pipeline on every boot. On
+first startup it checks `store.has_any_run()`; if the store is empty it
+runs the pipeline once via `ingest.run_and_store()` and persists the result;
+every startup after that just reads the latest run via
+`store.load_latest_run()`. The schema (`pipeline_runs`, `courier_profiles`,
+`events`, `cluster_agreement`) is defined once in `store.py` using
+SQLAlchemy Core against whatever `DATABASE_URL` points at — a local SQLite
+file by default (`sqlite:///data/rto_audit.db`), or the Postgres service
+Compose provides (`docker-compose.yml`) when running containerized. This is
+the seam a future scheduled ingestion job plugs into: it will call the same
+`run_and_store()` on a timer instead of the UI calling it once on boot.
+
 ## Why Polars, not Pandas
 
 `geo.py` computes the Haversine distance as native Polars expressions
@@ -102,6 +118,11 @@ Optional flags: `--couriers`, `--events`, `--seed` (defaults: 50, 20000, 42).
 The Streamlit app itself calls `run_pipeline(regenerate=True, ...)` on
 startup, so it always demos against a freshly generated, reproducible
 dataset (seeded) even if you skip the manual generation step.
+
+The app persists its results in `data/rto_audit.db` (SQLite, gitignored) by
+default; delete that file if you want the next startup to regenerate and
+re-cluster from scratch. Set `DATABASE_URL` to point at Postgres instead
+(this is what `docker-compose.yml` does automatically).
 
 ## DevOps
 
