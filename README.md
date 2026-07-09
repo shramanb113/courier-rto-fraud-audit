@@ -31,13 +31,16 @@ src/rto_audit/
 ├── clustering.py   # StandardScaler + KMeans(k=3) + centroid-to-label mapping
 ├── pipeline.py      # orchestrates: generate/load -> features -> profile -> cluster
 ├── store.py          # SQLAlchemy Core schema + save/load of pipeline runs (SQLite or Postgres)
+├── s3_source.py      # boto3 S3 client wrapper: upload/list/download event batches (LocalStack or real S3)
 └── ingest.py         # composes run_pipeline() + store.save_run() into one persisted run
 
 app/
 └── streamlit_app.py  # thin UI: imports rto_audit, renders 3 tabs
 
 scripts/
-└── generate_data.py  # CLI: python scripts/generate_data.py --couriers 50 --events 20000 --seed 42
+├── generate_data.py    # CLI: writes a static local CSV (used by the non-Docker "Running locally" path)
+├── produce_events.py   # CLI: uploads one synthetic event batch to the S3 bucket
+└── ingest_events.py    # CLI: pulls all S3 batches, runs the pipeline, persists the result
 
 tests/                 # pytest suite (config, geo, features, profiling, clustering, pipeline)
 Dockerfile             # multi-stage: builder (deps + package) -> slim non-root runtime
@@ -91,6 +94,32 @@ or the Postgres service Compose provides (`docker-compose.yml`) when
 running containerized. This is the seam a future scheduled ingestion job
 plugs into: it will call the same `run_and_store()` on a timer instead of
 the UI calling it once on boot.
+
+### Dynamic ingestion (LocalStack S3)
+
+The results store above is one half of the story — the other half is where
+events come from. `scripts/produce_events.py` simulates a courier telemetry
+feed: it generates a batch of synthetic events and uploads it to an S3
+bucket. `scripts/ingest_events.py` picks up every batch currently in that
+bucket, concatenates them, and runs the combined events through the same
+`run_pipeline()` used everywhere else (via a new optional `events_df`
+parameter that lets `run_pipeline()` skip its own generate/load step and
+work directly off an already-loaded DataFrame), then persists the result
+through the same `store.save_run()` as any other run.
+
+Locally and in Compose, the bucket is emulated with
+[LocalStack](https://github.com/localstack/localstack) (free Community
+edition, S3 only) rather than a real AWS account — `rto_audit.s3_source`
+talks to it through the same boto3 S3 client interface real AWS would use,
+so pointing at a real bucket later is a configuration change
+(`S3_ENDPOINT_URL`, credentials), not a code change. Tests don't need
+LocalStack running at all — they mock S3 in-process with `moto`, the same
+"fast in-memory substitute for tests, real service for Compose" split
+already used for SQLite vs. Postgres in the results store.
+
+Both scripts are run manually for now (`python scripts/produce_events.py`,
+`python scripts/ingest_events.py`) — there's no scheduler wiring them up on
+an interval yet; that's separate, later work.
 
 ## Why Polars, not Pandas
 

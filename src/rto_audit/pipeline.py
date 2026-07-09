@@ -24,10 +24,13 @@ def run_pipeline(
     n_couriers: int = 50,
     n_events: int = 20_000,
     seed: int = 42,
+    events_df: pl.DataFrame | None = None,
 ) -> PipelineResult:
     ground_truth_df = None
 
-    if regenerate or (data_path is None and not DEFAULT_DATA_PATH.exists()):
+    if events_df is not None:
+        pass
+    elif regenerate or (data_path is None and not DEFAULT_DATA_PATH.exists()):
         events_df, ground_truth_df = generate_delivery_logs(
             n_couriers=n_couriers, n_events=n_events, seed=seed
         )

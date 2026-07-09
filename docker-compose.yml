@@ -16,6 +16,24 @@ services:
       retries: 5
       start_period: 10s
 
+  localstack:
+    image: localstack/localstack:3
+    container_name: rto-audit-localstack
+    restart: unless-stopped
+    environment:
+      - SERVICES=s3
+      - DEBUG=0
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   rto-audit:
     build:
       context: .
@@ -52,3 +70,4 @@ services:
 
 volumes:
   postgres-data:
+  localstack-data:
