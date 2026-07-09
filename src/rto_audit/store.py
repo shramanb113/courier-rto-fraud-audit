@@ -72,16 +72,6 @@ cluster_agreement = Table(
     Column("count", Integer, nullable=False),
 )
 
-PROFILE_COLUMNS = [
-    "courier_id",
-    "total_events",
-    "failed_status_count",
-    "avg_deviation_distance",
-    "distance_variance",
-    "anomaly_count",
-    "rto_rate",
-    "cluster_label",
-]
 PROFILE_SCHEMA = {
     "courier_id": pl.Utf8,
     "total_events": pl.Int64,
@@ -92,19 +82,13 @@ PROFILE_SCHEMA = {
     "rto_rate": pl.Float64,
     "cluster_label": pl.Utf8,
 }
+PROFILE_COLUMNS = list(PROFILE_SCHEMA)
 
-EVENT_COLUMNS = [
-    "event_id",
-    "courier_id",
-    "timestamp",
-    "reported_status",
-    "courier_latitude",
-    "courier_longitude",
-    "customer_latitude",
-    "customer_longitude",
-    "distance_m",
-    "distance_anomaly",
-]
+# Persisted event schema is a deliberate UI-facing subset of run_pipeline()'s
+# full events_df: dwell_seconds and low_dwell_flag are dropped (unused by
+# streamlit_app.py), and distance_anomaly is stored/reloaded as Int64 rather
+# than run_pipeline()'s Int8. A store-loaded PipelineResult.events_df is not
+# byte-for-byte identical to a live run's.
 EVENT_SCHEMA = {
     "event_id": pl.Utf8,
     "courier_id": pl.Utf8,
@@ -117,13 +101,14 @@ EVENT_SCHEMA = {
     "distance_m": pl.Float64,
     "distance_anomaly": pl.Int64,
 }
+EVENT_COLUMNS = list(EVENT_SCHEMA)
 
-AGREEMENT_COLUMNS = ["planted_profile", "cluster_label", "count"]
 AGREEMENT_SCHEMA = {
     "planted_profile": pl.Utf8,
     "cluster_label": pl.Utf8,
     "count": pl.Int64,
 }
+AGREEMENT_COLUMNS = list(AGREEMENT_SCHEMA)
 
 
 def get_engine(database_url: str) -> Engine:
@@ -178,15 +163,19 @@ def _rows_to_df(rows: list[dict], schema: dict) -> pl.DataFrame:
     return pl.DataFrame([dict(row) for row in rows], schema=schema)
 
 
-def load_latest_run(engine: Engine) -> PipelineResult | None:
+def get_latest_run_id(engine: Engine) -> int | None:
     with engine.connect() as conn:
-        latest_run_id = conn.execute(
+        return conn.execute(
             select(pipeline_runs.c.run_id).order_by(pipeline_runs.c.run_id.desc()).limit(1)
         ).scalar()
 
-        if latest_run_id is None:
-            return None
 
+def load_latest_run(engine: Engine) -> PipelineResult | None:
+    latest_run_id = get_latest_run_id(engine)
+    if latest_run_id is None:
+        return None
+
+    with engine.connect() as conn:
         profile_rows = conn.execute(
             select(*[courier_profiles.c[name] for name in PROFILE_COLUMNS]).where(
                 courier_profiles.c.run_id == latest_run_id

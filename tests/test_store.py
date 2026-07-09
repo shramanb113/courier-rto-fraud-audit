@@ -5,7 +5,13 @@ import pytest
 from sqlalchemy import create_engine
 
 from rto_audit.pipeline import PipelineResult
-from rto_audit.store import has_any_run, init_schema, load_latest_run, save_run
+from rto_audit.store import (
+    get_latest_run_id,
+    has_any_run,
+    init_schema,
+    load_latest_run,
+    save_run,
+)
 
 
 @pytest.fixture
@@ -89,3 +95,15 @@ def test_save_run_twice_load_latest_returns_most_recent(engine):
 
     loaded = load_latest_run(engine)
     assert sorted(loaded.clustered_df["courier_id"].to_list()) == ["z1", "z2"]
+
+
+def test_get_latest_run_id_returns_none_when_store_empty(engine):
+    assert get_latest_run_id(engine) is None
+
+
+def test_get_latest_run_id_returns_most_recent(engine):
+    first_run_id = save_run(engine, _make_result(courier_prefix="c"))
+    second_run_id = save_run(engine, _make_result(courier_prefix="z"))
+
+    assert get_latest_run_id(engine) == second_run_id
+    assert second_run_id > first_run_id

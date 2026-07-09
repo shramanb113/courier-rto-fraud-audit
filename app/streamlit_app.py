@@ -5,7 +5,7 @@ import streamlit as st
 from rto_audit.clustering import LABEL_HIGH_RISK
 from rto_audit.config import COST_PER_RTO_RANGE_INR, DATABASE_URL, DEFAULT_COST_PER_RTO_INR
 from rto_audit.ingest import run_and_store
-from rto_audit.store import get_engine, has_any_run, init_schema, load_latest_run
+from rto_audit.store import get_engine, get_latest_run_id, has_any_run, init_schema, load_latest_run
 
 st.set_page_config(page_title="Courier Telemetry Audit", layout="wide")
 
@@ -22,7 +22,13 @@ engine = get_db_engine()
 if not has_any_run(engine):
     run_and_store(engine, regenerate=True, n_couriers=50, n_events=20_000, seed=42)
 
-result = load_latest_run(engine)
+
+@st.cache_data
+def load_result(run_id: int):
+    return load_latest_run(engine)
+
+
+result = load_result(get_latest_run_id(engine))
 
 st.title("Courier Telemetry Audit & RTO Fraud Analytics")
 
