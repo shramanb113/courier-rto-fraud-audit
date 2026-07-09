@@ -86,10 +86,11 @@ every startup after that just reads the latest run via
 `store.load_latest_run()`. The schema (`pipeline_runs`, `courier_profiles`,
 `events`, `cluster_agreement`) is defined once in `store.py` using
 SQLAlchemy Core against whatever `DATABASE_URL` points at — a local SQLite
-file by default (`sqlite:///data/rto_audit.db`), or the Postgres service
-Compose provides (`docker-compose.yml`) when running containerized. This is
-the seam a future scheduled ingestion job plugs into: it will call the same
-`run_and_store()` on a timer instead of the UI calling it once on boot.
+file by default (resolving to `data/rto_audit.db` under the project root),
+or the Postgres service Compose provides (`docker-compose.yml`) when
+running containerized. This is the seam a future scheduled ingestion job
+plugs into: it will call the same `run_and_store()` on a timer instead of
+the UI calling it once on boot.
 
 ## Why Polars, not Pandas
 
@@ -115,14 +116,15 @@ streamlit run app/streamlit_app.py
 `scripts/generate_data.py` writes `data/delivery_event_logs.csv` and
 `data/ground_truth_profiles.csv` (both gitignored — regenerate anytime).
 Optional flags: `--couriers`, `--events`, `--seed` (defaults: 50, 20000, 42).
-The Streamlit app itself calls `run_pipeline(regenerate=True, ...)` on
-startup, so it always demos against a freshly generated, reproducible
-dataset (seeded) even if you skip the manual generation step.
+The Streamlit app no longer regenerates data on every startup — see the
+"Results store" section above for how it bootstraps once and then serves
+persisted results.
 
-The app persists its results in `data/rto_audit.db` (SQLite, gitignored) by
-default; delete that file if you want the next startup to regenerate and
-re-cluster from scratch. Set `DATABASE_URL` to point at Postgres instead
-(this is what `docker-compose.yml` does automatically).
+The app persists its results in a local SQLite file (`data/rto_audit.db`
+under the project root, gitignored) by default; delete that file if you
+want the next startup to regenerate and re-cluster from scratch. Set
+`DATABASE_URL` to point at Postgres instead (this is what
+`docker-compose.yml` does automatically).
 
 ## DevOps
 
