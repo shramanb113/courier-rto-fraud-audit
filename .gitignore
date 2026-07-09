@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 venv/
 data/*.csv
+data/*.db
 !data/.gitkeep
 .streamlit/
 .pytest_cache/
