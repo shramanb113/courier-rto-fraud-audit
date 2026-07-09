@@ -1,6 +1,5 @@
 import numpy as np
 import polars as pl
-import pytest
 
 from rto_audit.clustering import (
     CLUSTER_FEATURES,

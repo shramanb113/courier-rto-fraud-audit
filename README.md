@@ -290,22 +290,43 @@ docker run --rm -v "$(pwd)/k8s:/k8s" ghcr.io/yannh/kubeconform:latest \
 All 12 resources across the 7 files validate cleanly against the
 Kubernetes 1.29 schema. Applying them (`kubectl apply -f k8s/`) is the
 next step whenever a real cluster is available — the same `kubeconform`
-check is also the natural thing to wire into CI (see the CI/CD roadmap
-below) so a broken manifest fails a PR before anyone tries to apply it.
+check now also runs in CI (see below) so a broken manifest fails a PR
+before anyone tries to apply it.
 
-### Roadmap: CI/CD (GitHub Actions, not yet added)
+### CI/CD (GitHub Actions)
 
-No workflow exists in `.github/workflows/` yet. Planned pipeline:
+`.github/workflows/ci.yml` runs on every push and PR to `main`:
 
-- On every PR: `pytest`, plus a `docker build` (using the `builder` and
-  `runtime` targets) to catch Dockerfile regressions before merge.
-- On merge to `main`: build and push the `runtime` image to a container
-  registry (GHCR), tagged with the commit SHA, so any Kubernetes rollout
-  above has something concrete to deploy.
-- Dependency drift: a scheduled job re-resolving `requirements.txt` against
-  the pinned upper bounds already in place, to catch breaking upstream
-  releases (e.g. Plotly/Streamlit deprecations already noted in this repo)
-  before they reach a running deployment.
+- **`test`** — `ruff check .` (lint) then `pytest -v`.
+- **`docker-build`** — `docker build --target runtime` (catches Dockerfile
+  regressions before merge), a [Trivy](https://github.com/aquasecurity/trivy)
+  scan of the built image for known CVEs, and the same `kubeconform`
+  validation of `k8s/*.yaml` shown above, now automated instead of run by
+  hand.
+- **`push-image`** — only on an actual merge to `main` (not on PRs, and
+  only after `test` and `docker-build` both pass): builds and pushes the
+  `runtime` image to GHCR, tagged with the commit SHA and `latest`, using
+  the repo's built-in `GITHUB_TOKEN` — no separate registry account or
+  secret to manage. This is what gives the Kubernetes manifests above a
+  real, concrete image to deploy instead of one only built locally.
+
+Two choices worth explaining if asked:
+
+- **The Trivy scan reports but doesn't fail the build** (`exit-code: "0"`).
+  Some CRITICAL/HIGH findings show up in base images (`python:3.11-slim`,
+  `postgres:16-alpine`) that aren't something this project's own code can
+  fix directly, and Dependabot (below) is what actually keeps those base
+  images current. Failing the pipeline on every upstream CVE would make CI
+  flaky for reasons outside this repo's control; the scan still runs and
+  reports on every build so nothing is hidden.
+- **No staging environment, canary, or manual approval gate.** There's one
+  deploy target and no team reviewing rollouts, so a staged-rollout
+  pipeline would be solving a problem this project doesn't have.
+
+`.github/dependabot.yml` covers dependency updates (`pip`, the Dockerfile's
+base images, and the workflow's own GitHub Actions versions) on a weekly
+schedule — using GitHub's built-in Dependabot instead of hand-writing a
+scheduled "check for drift" job, since it does exactly that for free.
 
 ## Running tests
 
