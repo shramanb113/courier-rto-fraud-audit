@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rto-audit-localstack-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rto-audit-localstack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rto-audit-localstack
+  template:
+    metadata:
+      labels:
+        app: rto-audit-localstack
+    spec:
+      containers:
+        - name: localstack
+          image: localstack/localstack:3
+          ports:
+            - containerPort: 4566
+          env:
+            - name: SERVICES
+              value: "s3"
+            - name: DEBUG
+              value: "0"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/localstack
+          readinessProbe:
+            httpGet:
+              path: /_localstack/health
+              port: 4566
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rto-audit-localstack-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rto-audit-localstack
+spec:
+  type: ClusterIP
+  selector:
+    app: rto-audit-localstack
+  ports:
+    - port: 4566
+      targetPort: 4566

@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rto-audit-produce-events
+spec:
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: produce-events
+              image: rto-audit:latest
+              command: ["python", "scripts/produce_events.py", "--couriers", "10", "--events", "500"]
+              envFrom:
+                - configMapRef:
+                    name: rto-audit-config
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi

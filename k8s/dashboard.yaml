@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rto-audit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rto-audit
+  template:
+    metadata:
+      labels:
+        app: rto-audit
+    spec:
+      containers:
+        - name: rto-audit
+          image: rto-audit:latest
+          ports:
+            - containerPort: 8501
+          envFrom:
+            - configMapRef:
+                name: rto-audit-config
+            - secretRef:
+                name: rto-audit-db
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rto-audit
+spec:
+  type: ClusterIP
+  selector:
+    app: rto-audit
+  ports:
+    - port: 8501
+      targetPort: 8501

@@ -222,25 +222,76 @@ actually configures, beyond the minimum to make it start:
   without manual intervention, but an intentional `docker compose stop`
   stays stopped.
 
-### Roadmap: Kubernetes (not yet added)
+### Kubernetes
 
-The image is already built to be orchestrator-agnostic (env-driven config,
-a real container healthcheck, no reliance on Compose-specific features),
-which is what makes this the natural next step rather than a rewrite.
-Planned:
+The `k8s/` directory ports the Compose setup above onto plain Kubernetes
+manifests — no Helm, no GitOps, no autoscaler. The image was already
+orchestrator-agnostic (env-driven config, a real container healthcheck, no
+reliance on Compose-specific features), so this was porting configuration,
+not rewriting the app:
 
-- `Deployment` + `Service` (`ClusterIP` + an `Ingress` or `LoadBalancer` for
-  external access) in place of the single Compose service.
-- `ConfigMap` for the non-secret `STREAMLIT_*` environment variables
-  already defined in `docker-compose.yml`.
-- Liveness and readiness probes against `/_stcore/health` — the same
-  endpoint the Docker `HEALTHCHECK` already uses, just expressed as k8s
-  probes instead of a Docker-level check.
-- A `PersistentVolumeClaim` for `/app/data`, replacing the local bind
-  mount.
-- Resource `requests`/`limits` on the container, since none are set today
-  (Compose's `deploy.resources` key is Swarm/Compose-only and isn't in
-  `docker-compose.yml` yet either).
+```
+k8s/
+├── configmap.yaml         # non-secret STREAMLIT_*/S3_* env vars
+├── secret.example.yaml    # template for DATABASE_URL — copy to secret.yaml
+│                          # (gitignored) and fill in a real value; never
+│                          # commit the real one
+├── postgres.yaml          # PVC + Deployment + Service for Postgres
+├── localstack.yaml        # PVC + Deployment + Service for the S3 emulator
+├── dashboard.yaml         # Deployment + Service for the Streamlit app
+├── cronjob-produce.yaml   # runs scripts/produce_events.py on a schedule
+└── cronjob-ingest.yaml    # runs scripts/ingest_events.py on a schedule
+```
+
+Worth calling out in an interview:
+
+- **Same image, different entrypoint per workload.** `dashboard.yaml` runs
+  the image as-is (the Dockerfile's `ENTRYPOINT` starts Streamlit);
+  `cronjob-produce.yaml`/`cronjob-ingest.yaml` run the exact same image
+  with `command:` overriding the entrypoint to run one of the CLI scripts
+  instead. One image, three different workload shapes — no separate
+  "batch" image to build and keep in sync.
+- **`CronJob`, not `Deployment`, for the producer/ingestion scripts.** They
+  do one unit of work and exit; a `CronJob` on a schedule (`*/2` and `*/5`
+  minutes) matches that shape, versus a `Deployment` (a long-running
+  process kept alive indefinitely) for the dashboard, which actually is
+  one. `concurrencyPolicy: Forbid` on both stops overlapping runs if one
+  takes longer than its interval.
+- **Liveness/readiness probes are `httpGet`, not `exec`.** The Docker-level
+  `HEALTHCHECK` has to run a Python one-liner inside the container because
+  the slim image has no `curl`; a Kubernetes `httpGet` probe doesn't have
+  that problem — the kubelet makes the HTTP request itself, so the probe
+  in `dashboard.yaml` is simpler than the Dockerfile's equivalent.
+- **The results-store refactor already did the hard part.** The original
+  plan here was a `PersistentVolumeClaim` for `/app/data` on the dashboard
+  pod. That's gone — since results now live in Postgres (see "Results
+  store" above), the dashboard pod is stateless and only Postgres (and
+  LocalStack, for its bucket data) need a `PersistentVolumeClaim`.
+- **No `Ingress`/`LoadBalancer` yet.** The `Service` for the dashboard is
+  `ClusterIP` only. Deciding how to expose it externally depends on the
+  specific cluster it eventually runs on — not worth writing speculative
+  Ingress YAML for a controller that isn't confirmed to exist wherever
+  that ends up being.
+
+**Honest caveat:** this workstation has no Kubernetes cluster available (no
+Docker Desktop Kubernetes, no kind/k3s/minikube installed), so these
+manifests are written and schema-validated but have not been applied
+against a live cluster. Validation was done without installing any
+Kubernetes tooling locally — via a one-off containerized run of
+[kubeconform](https://github.com/yannh/kubeconform):
+
+```bash
+docker run --rm -v "$(pwd)/k8s:/k8s" ghcr.io/yannh/kubeconform:latest \
+  -summary -kubernetes-version 1.29.0 /k8s/configmap.yaml /k8s/postgres.yaml \
+  /k8s/localstack.yaml /k8s/dashboard.yaml /k8s/cronjob-produce.yaml \
+  /k8s/cronjob-ingest.yaml /k8s/secret.example.yaml
+```
+
+All 12 resources across the 7 files validate cleanly against the
+Kubernetes 1.29 schema. Applying them (`kubectl apply -f k8s/`) is the
+next step whenever a real cluster is available — the same `kubeconform`
+check is also the natural thing to wire into CI (see the CI/CD roadmap
+below) so a broken manifest fails a PR before anyone tries to apply it.
 
 ### Roadmap: CI/CD (GitHub Actions, not yet added)
 

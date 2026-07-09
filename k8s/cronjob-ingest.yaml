@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rto-audit-ingest-events
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: ingest-events
+              image: rto-audit:latest
+              command: ["python", "scripts/ingest_events.py"]
+              envFrom:
+                - configMapRef:
+                    name: rto-audit-config
+                - secretRef:
+                    name: rto-audit-db
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi

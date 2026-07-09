@@ -10,3 +10,4 @@ data/*.db
 *.egg-info/
 docs/
 .superpowers/
+k8s/secret.yaml
