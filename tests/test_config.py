@@ -11,10 +11,12 @@ def test_database_url_defaults_to_sqlite_under_data_dir(monkeypatch):
 
 def test_database_url_honors_env_override(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg2://u:p@host:5432/db")
-    importlib.reload(config)
-    assert config.DATABASE_URL == "postgresql+psycopg2://u:p@host:5432/db"
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    importlib.reload(config)
+    try:
+        importlib.reload(config)
+        assert config.DATABASE_URL == "postgresql+psycopg2://u:p@host:5432/db"
+    finally:
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        importlib.reload(config)
 
 
 def test_thresholds_have_expected_values():
